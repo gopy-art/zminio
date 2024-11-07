@@ -3,8 +3,10 @@ package helper
 import (
 	logger "Zminio/log"
 	"context"
+	"crypto/tls"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path"
 	"time"
@@ -52,7 +54,7 @@ func (m MinioMethods) DownloadFromMinio(connection *minio.Client, pathfile, objn
 	defer object.Close()
 
 	// Create a local file to save the downloaded object
-	localFile, err := os.Create(pathfile)
+	localFile, err := os.Create(pathfile + objname)
 	if err != nil {
 		return err
 	}
@@ -85,17 +87,36 @@ func (m MinioMethods) DeleteFromMinio(connection *minio.Client, objname, bucket 
 This function is for set the connection with minio server
 and it will return minio.Client for do some stuff!
 */
-func (m MinioMethods) MinioConnection(url, username, password, bucket string) (*minio.Client, error) {
+func (m MinioMethods) MinioConnection(url, username, password, bucket string, secure bool) (*minio.Client, error) {
 	// Create a new MinIO client
 	var client *minio.Client
+	var minioOption *minio.Options
 	var err error
 	var errorLog bool = true
+
+	if secure {
+		// Create a custom transport with InsecureSkipVerify set to true
+		transport := &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, // Skip SSL verification
+			},
+		}
+
+		minioOption = &minio.Options{
+			Creds:     credentials.NewStaticV4(username, password, ""),
+			Secure:    secure,
+			Transport: transport,
+		}
+	} else {
+		minioOption = &minio.Options{
+			Creds:     credentials.NewStaticV4(username, password, ""),
+			Secure:    secure,
+		}
+	}
+
 	// make loop for connecting to the minio if we have connection lost
 	for {
-		client, err = minio.New(url, &minio.Options{
-			Creds:  credentials.NewStaticV4(username, password, ""),
-			Secure: false,
-		})
+		client, err = minio.New(url, minioOption)
 		if err != nil {
 			if errorLog {
 				logger.ErrorLogger.Println("we have an error in connecting to minio, err = ", err)
