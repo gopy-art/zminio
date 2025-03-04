@@ -5,6 +5,7 @@ import (
 	"Zminio/helper"
 	logger "Zminio/log"
 	"Zminio/prometheus"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -13,10 +14,21 @@ import (
 )
 
 func init() {
-	godotenv.Load(".env")
 	zMinioBaseDir, _ := os.Getwd()
 	// set the flags
-	console.InitConsole()
+	console.Execute()
+
+	// init env
+	if console.EnvFile != "" {
+		if err := godotenv.Load(console.EnvFile); err != nil {
+			fmt.Printf("error in load the .env file, error = %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	// validate flags
+	console.ValidateFlags()
+
 	// init logger
 	if console.Logger == "stdout" {
 		logger.InitLoggerStdout()

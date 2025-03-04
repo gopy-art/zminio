@@ -48,7 +48,7 @@ func (m *Minio) InitConnection() *Minio {
 This function is for upload the objects into the minio, you should give the path of objects that you want to upload, in argument
 */
 func (m *Minio) Upload(pathfile string) error {
-	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioSecretKey, m.MinioAccessKey, m.Bucket, m.MinioSecure)
+	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioAccessKey, m.MinioSecretKey, m.Bucket, m.MinioSecure)
 	if err != nil {
 		return err
 	} else {
@@ -65,7 +65,7 @@ func (m *Minio) Upload(pathfile string) error {
 This function is for Download the objects from the minio, you should give the save path of objects that you want to download, in argument
 */
 func (m *Minio) Download(path string, objname string) error {
-	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioSecretKey, m.MinioAccessKey, m.Bucket, m.MinioSecure)
+	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioAccessKey, m.MinioSecretKey, m.Bucket, m.MinioSecure)
 	if err != nil {
 		return err
 	} else {
@@ -82,7 +82,7 @@ func (m *Minio) Download(path string, objname string) error {
 This function is for Delete the objects from the minio, you should give the object name that you want to delete , in argument.
 */
 func (m *Minio) Delete(objname string) error {
-	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioSecretKey, m.MinioAccessKey, m.Bucket, m.MinioSecure)
+	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioAccessKey, m.MinioSecretKey, m.Bucket, m.MinioSecure)
 	if err != nil {
 		return err
 	} else {
@@ -99,7 +99,7 @@ func (m *Minio) Delete(objname string) error {
 This function is for select the objects from the minio, you should give the bucket name that you want to select , in argument.
 */
 func (m *Minio) ListObjects(bucket string) ([]string, error) {
-	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioSecretKey, m.MinioAccessKey, m.Bucket, m.MinioSecure)
+	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioAccessKey, m.MinioSecretKey, m.Bucket, m.MinioSecure)
 	if err != nil {
 		return nil, err
 	} else {
@@ -116,7 +116,7 @@ func (m *Minio) ListObjects(bucket string) ([]string, error) {
 This function is for move the objects from a bucket to another bucket in minio, you should give the object name that you want to move and sourse bucket and destination bucket , in argument.
 */
 func (m *Minio) MoveObject(objname, bucketSrc, bucketDest string) error {
-	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioSecretKey, m.MinioAccessKey, m.Bucket, m.MinioSecure)
+	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioAccessKey, m.MinioSecretKey, m.Bucket, m.MinioSecure)
 	if err != nil {
 		return err
 	} else {
@@ -133,7 +133,7 @@ func (m *Minio) MoveObject(objname, bucketSrc, bucketDest string) error {
 This function is for check that bucket exists or not, if it is not create it.
 */
 func (m *Minio) CheckBucket(bucket string) error {
-	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioSecretKey, m.MinioAccessKey, m.Bucket, m.MinioSecure)
+	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioAccessKey, m.MinioSecretKey, m.Bucket, m.MinioSecure)
 	if err != nil {
 		return err
 	} else {
@@ -150,7 +150,7 @@ func (m *Minio) CheckBucket(bucket string) error {
 This function is for get the object info from minio.
 */
 func (m *Minio) ObjectInfo(bucket string, objname string) (interface{}, error) {
-	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioSecretKey, m.MinioAccessKey, m.Bucket, m.MinioSecure)
+	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioAccessKey, m.MinioSecretKey, m.Bucket, m.MinioSecure)
 	if err != nil {
 		return nil, err
 	} else {
@@ -167,7 +167,7 @@ func (m *Minio) ObjectInfo(bucket string, objname string) (interface{}, error) {
 This function is for upload the objects into the minio, you should give the path of objects that you want to upload, in argument
 */
 func (m *Minio) ListenNotification(prefix, suffix string, events []string) (<-chan notification.Info, error) {
-	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioSecretKey, m.MinioAccessKey, m.Bucket, m.MinioSecure)
+	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioAccessKey, m.MinioSecretKey, m.Bucket, m.MinioSecure)
 	if err != nil {
 		return nil, err
 	} else {

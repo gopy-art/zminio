@@ -15,6 +15,14 @@ services:
     image: minio/minio:RELEASE.2023-02-17T17-52-43Z.fips
     command: server /data --console-address ":9001"
 
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    environment:
+      - REDIS_PORT=6379
+      - REDIS_DATABASES=0
+
   grafana:
     image: grafana/grafana:9.3.0
     ports:
@@ -23,12 +31,12 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
-      - ./grafana/datasources.yaml:/home/adam/Documents/zminio/docker/datasources.yaml
+      - ./grafana/datasources.yaml:/home/user/Documents/zminio/docker/datasources.yaml
 
   prometheus:
     image: prom/prometheus:v2.21.0
     ports:
       - 9090:9090
     volumes:
-      - /home/adam/Documents/zminio/docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - /home/user/Videos/Documents/zminio/docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     command: --web.enable-lifecycle --config.file=/etc/prometheus/prometheus.yml

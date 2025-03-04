@@ -7,16 +7,18 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 var (
-	uploadObject   *prometheus.GaugeVec
-	downloadObject *prometheus.GaugeVec
-	WorkerIp       string
+	uploadObject, downloadObject, syncCurrent *prometheus.GaugeVec
+	WorkerIp                                  string
 )
+
+var Uptime prometheus.Gauge
 
 func ControllerPrometheusInit(prometheusHost string) {
 	addrs, err := net.InterfaceAddrs()
@@ -51,9 +53,26 @@ func ControllerPrometheusInit(prometheusHost string) {
 			"Version",
 		}, // labels
 	)
+	syncCurrent = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: "zminio",
+			Name:      "sync_status",
+			Help:      "on progress sync objects",
+		},
+		[]string{
+			"WorkerIp",
+			"Sync_Interval",
+			"Version",
+		}, // labels
+	)
+	Uptime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "zminio_uptime",
+		Help: "worker uptime in seconds",
+	})
 
-	prometheus.MustRegister(uploadObject, downloadObject)
+	prometheus.MustRegister(uploadObject, downloadObject, Uptime, syncCurrent)
 	http.Handle("/metrics", promhttp.Handler())
+	go recordMetrics()
 	if err := http.ListenAndServe(prometheusHost, nil); err != nil {
 		logger.ErrorLogger.Fatalf("could not run prometheus server: %s", err.Error())
 	}
@@ -72,7 +91,22 @@ func IncreasePrometheusCount(pType string) {
 			"Download_path": fmt.Sprintf("%v", console.OutPutFile),
 			"Version":       console.AppVersion,
 		}).Add(1)
+	} else if pType == "sync" {
+		syncCurrent.With(prometheus.Labels{
+			"WorkerIp":      WorkerIp,
+			"Sync_Interval": fmt.Sprintf("%v hour", console.Interval),
+			"Version":       console.AppVersion,
+		}).Add(1)
 	}
+}
+
+func DecreasePrometheusCount() {
+	time.Sleep(10 * time.Second)
+	syncCurrent.With(prometheus.Labels{
+		"WorkerIp":      WorkerIp,
+		"Sync_Interval": fmt.Sprintf("%v hour", console.Interval),
+		"Version":       console.AppVersion,
+	}).Dec()
 }
 
 func IsValidIpv4(ip string) bool {
@@ -81,4 +115,12 @@ func IsValidIpv4(ip string) bool {
 		return false
 	}
 	return true
+}
+
+func recordMetrics() {
+	startTime := time.Now()
+	for {
+		Uptime.Set(time.Since(startTime).Seconds())
+		time.Sleep(1 * time.Second)
+	}
 }

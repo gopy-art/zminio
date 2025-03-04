@@ -6,16 +6,27 @@ import (
 	"Zminio/prometheus"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	zrediss "github.com/gopy-art/zrediss/connection"
 	"github.com/minio/minio-go/v7"
 )
 
+var (
+	cache zrediss.RedisConnection
+)
+
 func ActionHelper() {
+	cache = zrediss.RedisConnection{
+		RedisAddress: os.Getenv("REDIS_BACKEND_URL"),
+	}
 	config := Minio{}
 	minioHelper := config.InitConnection()
 
@@ -56,7 +67,7 @@ func ActionHelper() {
 			go func() {
 				defer wg.Done()
 				cmd := exec.Command("sh", "-c",
-					fmt.Sprintf("./Zminio -ak %v -sk %v -u %v -b %v -do upload -f %v",
+					fmt.Sprintf("./Zminio --ak %v --sk %v -u %v -b %v --do upload -f %v",
 						os.Getenv("MINIO_ACCESS_KEY"),
 						os.Getenv("MINIO_SECRET_KEY"),
 						os.Getenv("MINIO_ENDPOINT"),
@@ -117,11 +128,12 @@ func ActionHelper() {
 				os.Exit(0)
 			}
 
+			start := time.Now()
 			for i, l := range list {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					err := minioHelper.Download(console.OutPutFile+"/"+l, l)
+					err := minioHelper.Download(console.OutPutFile, l)
 					if err != nil {
 						logger.ErrorLogger.Println(err)
 						os.Exit(0)
@@ -130,18 +142,20 @@ func ActionHelper() {
 					if console.Prometheus != "" {
 						prometheus.IncreasePrometheusCount("download")
 					}
-					logger.SuccessLogger.Printf("The object with name {%v} downloaded to the this path {%v} successfully.", console.Object, console.OutPutFile)
+					logger.SuccessLogger.Printf("The object with name {%v} downloaded to the this path {%v} successfully.", l, console.OutPutFile)
 				}()
 
 				if len(list) < 50 {
 					wg.Wait()
 				} else {
-					if i%50 == 0 {
+					if i%console.NumberOfWorker == 0 {
 						wg.Wait()
 					}
 				}
 			}
+			end := time.Since(start)
 			logger.SuccessLogger.Printf("The count of file has been dwonloaded from the minio is = %v\n", count)
+			logger.SuccessLogger.Printf("This operation took = %v\n", end)
 		} else {
 			err := minioHelper.Download(console.OutPutFile, console.Object)
 			if err != nil {
@@ -169,6 +183,7 @@ func ActionHelper() {
 				os.Exit(0)
 			}
 
+			start := time.Now()
 			for i, l := range list {
 				wg.Add(1)
 				go func() {
@@ -185,12 +200,14 @@ func ActionHelper() {
 				if len(list) < 50 {
 					wg.Wait()
 				} else {
-					if i%50 == 0 {
+					if i%console.NumberOfWorker == 0 {
 						wg.Wait()
 					}
 				}
 			}
+			end := time.Since(start)
 			logger.SuccessLogger.Printf("The count of file has been deleted from the minio is = %v\n", count)
+			logger.SuccessLogger.Printf("This operation took = %v\n", end)
 		} else {
 			err := minioHelper.Delete(console.Object)
 			if err != nil {
@@ -262,12 +279,12 @@ func ActionHelper() {
 			Functionality:  functions,
 		}
 
-		sourceClient, err := minioHelper.Functionality.MinioConnection(console.Url, console.Secret_key, console.Access_key, console.Bucket, console.SecureSSL)
+		sourceClient, err := minioHelper.Functionality.MinioConnection(console.Url, console.Access_key, console.Secret_key, console.Bucket, console.SecureSSL)
 		if err != nil {
 			logger.ErrorLogger.Fatal(err)
 		}
 
-		dstClient, err := configSync.Functionality.MinioConnection(console.Url_sync, console.Secret_key_sync, console.Access_key_sync, console.Bucket_sync, console.SecureSSL_sync)
+		dstClient, err := configSync.Functionality.MinioConnection(console.Url_sync, console.Access_key_sync, console.Secret_key_sync, console.Bucket_sync, console.SecureSSL_sync)
 		if err != nil {
 			logger.ErrorLogger.Fatal(err)
 		}
@@ -295,23 +312,104 @@ func ActionHelper() {
 			go func() {
 				defer wg.Done()
 				for objectKey := range objectCh {
+					if console.Prometheus != "" {
+						prometheus.IncreasePrometheusCount("sync")
+					}
 					syncObject(sourceClient, dstClient, console.Bucket, console.Bucket_sync, objectKey.ContentType, objectKey.Key, objectKey.Size)
+					if console.Prometheus != "" {
+						go prometheus.DecreasePrometheusCount()
+					}
 				}
 			}()
 		}
 
-		// List objects in the source bucket and send to channel
-		objectList := sourceClient.ListObjects(context.Background(), console.Bucket, minio.ListObjectsOptions{Recursive: true})
-		for object := range objectList {
-			if object.Err != nil {
-				logger.ErrorLogger.Println(object.Err)
-			}
-			objectCh <- object
-		}
-		close(objectCh) // Close the channel when done
+		if console.ListenSync {
+			go func() {
+				for {
+					if console.CacheUsage && os.Getenv("REDIS_BACKEND_URL") != "" {
+						err := cache.InitConnection()
+						if err != nil {
+							logger.ErrorLogger.Fatalf("error in connect to cache, error = %v", err)
+						}
+			
+						objects, err := configSync.Functionality.ListAllObjectsFromMinio(dstClient, console.Bucket_sync)
+						if err != nil {
+							logger.ErrorLogger.Fatalf("error in get list of objects, error = %v", err)
+						}
+			
+						for _, obj := range objects {
+							if ok, err := cache.SetKeyWithValue(obj, obj); ok != "ok" && err != nil {
+								logger.ErrorLogger.Printf("error in set value in cache, error = %v \n", err)
+							}
+						}
+					}
 
-		// Wait for all workers to finish
-		wg.Wait()
+					objectList := sourceClient.ListObjects(context.Background(), console.Bucket, minio.ListObjectsOptions{Recursive: true})
+					for object := range objectList {
+						if object.Err != nil {
+							logger.ErrorLogger.Println(object.Err)
+						}
+						objectCh <- object
+					}
+
+					logger.SuccessLogger.Printf("interval run successfully!")
+					time.Sleep(time.Duration(console.Interval) * time.Hour)
+				}
+			}()
+
+			listenChannel := minioHelper.Functionality.NotificationFromMinio(sourceClient, "", "", []string{"s3:ObjectCreated:Put", "s3:ObjectCreated:CompleteMultipartUpload"})
+
+			var wg2 sync.WaitGroup
+			for range console.NumberOfWorker {
+				wg2.Add(1)
+				go func() {
+					for notification := range listenChannel {
+						for _, event := range notification.Records {
+							if event.S3.Bucket.Name == console.Bucket {
+								logger.InfoLogger.Printf("recieve object with name { %s }", event.S3.Object.Key)
+								obj := minio.ObjectInfo{
+									Key:         event.S3.Object.Key,
+									Size:        event.S3.Object.Size,
+									ContentType: event.S3.Object.ContentType,
+								}
+								objectCh <- obj
+							}
+						}
+					}
+				}()
+			}
+			wg2.Wait()
+		} else {
+			if console.CacheUsage && os.Getenv("REDIS_BACKEND_URL") != "" {
+				err := cache.InitConnection()
+				if err != nil {
+					logger.ErrorLogger.Fatalf("error in connect to cache, error = %v", err)
+				}
+	
+				objects, err := configSync.Functionality.ListAllObjectsFromMinio(dstClient, console.Bucket_sync)
+				if err != nil {
+					logger.ErrorLogger.Fatalf("error in get list of objects, error = %v", err)
+				}
+	
+				for _, obj := range objects {
+					if ok, err := cache.SetKeyWithValue(obj, obj); ok != "ok" && err != nil {
+						logger.ErrorLogger.Printf("error in set value in cache, error = %v \n", err)
+					}
+				}
+			}
+
+			// List objects in the source bucket and send to channel
+			objectList := sourceClient.ListObjects(context.Background(), console.Bucket, minio.ListObjectsOptions{Recursive: true})
+			for object := range objectList {
+				if object.Err != nil {
+					logger.ErrorLogger.Println(object.Err)
+				}
+				objectCh <- object
+			}
+			close(objectCh) // Close the channel when done
+			// Wait for all workers to finish
+			wg.Wait()
+		}
 
 		elapsed := time.Since(start)
 		logger.SuccessLogger.Println("sync operation took = ", elapsed)
@@ -329,7 +427,7 @@ func ActionHelper() {
 			}
 		}
 
-		connection, err := minioHelper.Functionality.MinioConnection(console.Url, console.Secret_key, console.Access_key, console.Bucket, console.SecureSSL)
+		connection, err := minioHelper.Functionality.MinioConnection(console.Url, console.Access_key, console.Secret_key, console.Bucket, console.SecureSSL)
 		if err != nil {
 			logger.ErrorLogger.Fatalln("error in connect to the minio")
 		}
@@ -354,11 +452,13 @@ func ActionHelper() {
 									prometheus.IncreasePrometheusCount("download")
 								}
 
-								err := minioHelper.Functionality.DeleteFromMinio(connection, event.S3.Object.Key, console.Bucket)
-								if err != nil {
-									logger.ErrorLogger.Printf("error in delete object {%s}, error = %v", event.S3.Object.Key, err)
-								} else {
-									logger.SuccessLogger.Printf("object {%s} deleted successfully!", event.S3.Object.Key)
+								if console.DeleteInSync {
+									err := minioHelper.Functionality.DeleteFromMinio(connection, event.S3.Object.Key, console.Bucket)
+									if err != nil {
+										logger.ErrorLogger.Printf("error in delete object {%s}, error = %v", event.S3.Object.Key, err)
+									} else {
+										logger.SuccessLogger.Printf("object {%s} deleted successfully!", event.S3.Object.Key)
+									}
 								}
 							}
 						}
@@ -375,6 +475,18 @@ func ActionHelper() {
 
 // syncObject downloads an object from the source and uploads it to the destination
 func syncObject(sourceClient, dstClient *minio.Client, sourceBucket, dstBucket, contentType, objectKey string, objectSize int64) {
+	if console.CacheUsage && os.Getenv("REDIS_BACKEND_URL") != "" {
+		err := cache.InitConnection()
+		if err != nil {
+			logger.ErrorLogger.Fatalf("error in connect to cache, error = %v", err)
+		}
+
+		if _, err = cache.GetSpecificKey(objectKey); err == nil {
+			logger.WarningLogger.Printf("this object { %v } already exists in the destination.", objectKey)
+			return
+		}
+	}
+
 	// Download the object from the source bucket
 	reader, err := sourceClient.GetObject(context.Background(), sourceBucket, objectKey, minio.GetObjectOptions{})
 	if err != nil {
@@ -390,6 +502,10 @@ func syncObject(sourceClient, dstClient *minio.Client, sourceBucket, dstBucket, 
 		return
 	}
 
+	if console.SaveObjects {
+		SaveFile(reader, strings.ReplaceAll(objectKey, " ", ""))
+	}
+
 	if console.DeleteInSync {
 		err = sourceClient.RemoveObject(context.Background(), sourceBucket, objectKey, minio.RemoveObjectOptions{ForceDelete: true})
 		if err != nil {
@@ -399,4 +515,34 @@ func syncObject(sourceClient, dstClient *minio.Client, sourceBucket, dstBucket, 
 	}
 
 	logger.SuccessLogger.Printf("The object with name {%v} moved from this bucket {%v} to the this bucket {%v} successfully.", objectKey, console.Bucket, console.Bucket_sync)
+}
+
+func SaveFile(reader *minio.Object, objectKey string) {
+	if console.OutPutFile == "" {
+		logger.ErrorLogger.Fatalf("the output path is not set!")
+	}
+
+	objpath := fmt.Sprintf("%v/%v", console.OutPutFile, objectKey)
+
+	dir := filepath.Dir(objpath)
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		logger.ErrorLogger.Fatalf("Failed to create directories: %v", err)
+	}
+
+	file, err := os.Create(objpath)
+	if err != nil {
+		logger.ErrorLogger.Fatalf("Failed to create file: %v", err)
+	}
+	defer file.Close()
+
+	_, err = io.Copy(file, reader)
+	if err != nil {
+		logger.ErrorLogger.Fatalf("Failed to write object to file: %v", err)
+	}
+
+	if console.Prometheus != "" {
+		prometheus.IncreasePrometheusCount("download")
+	}
+
+	logger.SuccessLogger.Printf("this { %v } successfully saved in this path { %v }!", objectKey, objpath)
 }
