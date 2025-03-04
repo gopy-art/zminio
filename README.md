@@ -125,16 +125,17 @@ this is a minio client package that allows you to these actions with your minio 
 ## ENV file
 the format of .env file should be like this:
 ```
-MINIO_ENDPOINT="localhost:9000"
+MINIO_ENDPOINT="localhost:8000"
 MINIO_ACCESS_KEY="minioadmin"
 MINIO_SECRET_KEY="minioadmin"
-MINIO_BUCKET_NAME="sync"
+MINIO_BUCKET_NAME="save"
 MINIO_SSL_SECRET="false"
-SYNC_MINIO_ENDPOINT="localhost:8000"
+SYNC_MINIO_ENDPOINT="localhost:9000"
 SYNC_MINIO_ACCESS_KEY="minioadmin"
 SYNC_MINIO_SECRET_KEY="minioadmin"
-SYNC_MINIO_BUCKET_NAME="upload"
+SYNC_MINIO_BUCKET_NAME="sync"
 SYNC_MINIO_SSL_SECRET="false"
+REDIS_BACKEND_URL='redis://localhost:6379'
 ```
 
 > [!NOTE] 
