@@ -85,7 +85,7 @@
             "uid": "SJQfW35Nk"
           },
           "editorMode": "builder",
-          "expr": "zminio_uptime",
+          "expr": "zsync_uptime",
           "legendFormat": "__auto",
           "range": true,
           "refId": "A"

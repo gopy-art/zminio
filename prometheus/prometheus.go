@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	uploadObject, downloadObject, syncCurrent *prometheus.GaugeVec
-	WorkerIp                                  string
+	uploadObject, downloadObject, syncCurrent, sideloader *prometheus.GaugeVec
+	WorkerIp                                              string
 )
 
 var Uptime prometheus.Gauge
@@ -65,12 +65,24 @@ func ControllerPrometheusInit(prometheusHost string) {
 			"Version",
 		}, // labels
 	)
+	sideloader = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: "zminio",
+			Name:      "sideloader_status",
+			Help:      "on progress of sideloader action",
+		},
+		[]string{
+			"WorkerIp",
+			"Sideloader",
+			"Version",
+		}, // labels
+	)
 	Uptime = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "zminio_uptime",
+		Name: "zsync_uptime",
 		Help: "worker uptime in seconds",
 	})
 
-	prometheus.MustRegister(uploadObject, downloadObject, Uptime, syncCurrent)
+	prometheus.MustRegister(uploadObject, downloadObject, Uptime, syncCurrent, sideloader)
 	http.Handle("/metrics", promhttp.Handler())
 	go recordMetrics()
 	if err := http.ListenAndServe(prometheusHost, nil); err != nil {
@@ -92,12 +104,34 @@ func IncreasePrometheusCount(pType string) {
 			"Version":       console.AppVersion,
 		}).Add(1)
 	} else if pType == "sync" {
+		downloadObject.With(prometheus.Labels{
+			"WorkerIp":      WorkerIp,
+			"Download_path": fmt.Sprintf("downloaded from %v", console.Url),
+			"Version":       console.AppVersion,
+		}).Add(1)
 		syncCurrent.With(prometheus.Labels{
 			"WorkerIp":      WorkerIp,
 			"Sync_Interval": fmt.Sprintf("%v hour", console.Interval),
 			"Version":       console.AppVersion,
 		}).Add(1)
+		uploadObject.With(prometheus.Labels{
+			"WorkerIp":    WorkerIp,
+			"Upload_path": fmt.Sprintf("uploaded into the %v", console.Url_sync),
+			"Version":     console.AppVersion,
+		}).Add(1)
 	}
+}
+
+func SetSideloader(message string) {
+	sideloader.With(prometheus.Labels{
+		"WorkerIp":   WorkerIp,
+		"Sideloader": message,
+		"Version":    console.AppVersion,
+	}).Add(1)
+}
+
+func ResetSideloader() {
+	sideloader.Reset()
 }
 
 func DecreasePrometheusCount() {

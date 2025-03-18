@@ -21,7 +21,7 @@ type MinioFunctions interface {
 	MinioConnection(url, username, password, bucket string, secure bool) (*minio.Client, error)
 	DownloadFromMinio(connection *minio.Client, pathfile, objname, bucket string) error
 	DeleteFromMinio(connection *minio.Client, objname, bucket string) error
-	ListAllObjectsFromMinio(connection *minio.Client, bucket string) ([]string, error)
+	ListAllObjectsFromMinio(connection *minio.Client, bucket string) ([]ObjectInfo, error)
 	MoveObjectInMinio(connection *minio.Client, bucketSrc, bucketDest, objname string) error
 	CheckBucketExists(connection *minio.Client, bucket string) error
 	NotificationFromMinio(connection *minio.Client, prefix, suffix string, events []string) <-chan notification.Info
@@ -98,7 +98,7 @@ func (m *Minio) Delete(objname string) error {
 /*
 This function is for select the objects from the minio, you should give the bucket name that you want to select , in argument.
 */
-func (m *Minio) ListObjects(bucket string) ([]string, error) {
+func (m *Minio) ListObjects(bucket string) ([]ObjectInfo, error) {
 	clm, err := m.Functionality.MinioConnection(m.MinioAddress, m.MinioAccessKey, m.MinioSecretKey, m.Bucket, m.MinioSecure)
 	if err != nil {
 		return nil, err

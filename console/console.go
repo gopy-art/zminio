@@ -3,6 +3,7 @@ package console
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 )
@@ -24,15 +25,20 @@ var (
 	MBucket         string
 	Prometheus      string
 	EnvFile         string
+	SideLoaderType  string
 	SecureSSL       bool
 	SecureSSL_sync  bool
-	NumberOfWorker  int
 	DeleteInSync    bool
 	ListenSync      bool
 	SaveObjects     bool
 	Version         bool
 	CacheUsage      bool
+	MinioCache      bool
+	SyncAll         bool
+	SideLoader      bool
+	NumberOfWorker  int
 	Interval        int
+	MaxSizeSideload int64
 )
 
 var rootCmd = &cobra.Command{
@@ -46,7 +52,7 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-var AppVersion string = "v2.4.2"
+var AppVersion string = "v2.7.0"
 
 // initial cli commands
 func init() {
@@ -63,17 +69,21 @@ func init() {
 	rootCmd.Flags().StringVarP(&Pathfile, "input", "f", "", "set the path of the file that you wanna upload")
 	rootCmd.Flags().StringVarP(&OutPutFile, "output", "o", "", "set the path of the file that you wanna download")
 	rootCmd.Flags().StringVarP(&Logger, "logger", "l", "stdout", "set app logger type , stdout or file")
+	rootCmd.Flags().StringVarP(&SideLoaderType, "type", "t", "", "set the side loader type. (server, client)")
 	rootCmd.Flags().StringVar(&EnvFile, "env", "", "set your env file path")
 	rootCmd.Flags().StringVar(&Prometheus, "pr", "", "run Prometheus on ip:port to monitor aminio metrics,if not set this flag prometheus disabled. (exaple:-pr 0.0.0.0:1234)")
 	rootCmd.Flags().StringVar(&Type, "do", "", "set the job you want to do. (download, upload, move, delete, list, sync, uploadDir)")
 	rootCmd.Flags().IntVarP(&NumberOfWorker, "workers", "n", 10, "set the count of worker for run.")
 	rootCmd.Flags().IntVarP(&Interval, "interval", "i", 1, "set the interval for sync objects")
 	rootCmd.Flags().BoolVar(&DeleteInSync, "ds", false, "delete the object from bucket after sync")
+	rootCmd.Flags().BoolVar(&SideLoader, "sideloader", false, "sideloader for transfer large objects over tcp connection.")
 	rootCmd.Flags().BoolVar(&SecureSSL, "se", false, "set your secure ssl option in connecting to the minio. (default false)")
 	rootCmd.Flags().BoolVar(&SecureSSL_sync, "ses", false, "set your secure ssl option in connecting to the minio. (default false)")
 	rootCmd.Flags().BoolVar(&ListenSync, "ls", false, "set the listen bucket on sync proccess!")
-	rootCmd.Flags().BoolVar(&CacheUsage, "cache", false, "use the cache for the sync proccess!")
+	rootCmd.Flags().BoolVar(&CacheUsage, "cache", false, "use the redis as a cache for the sync proccess!")
+	rootCmd.Flags().BoolVar(&MinioCache, "mincache", false, "use the minio as a cache for the sync proccess!")
 	rootCmd.Flags().BoolVar(&SaveObjects, "save", false, "save the objects throw the sync process!")
+	rootCmd.Flags().BoolVar(&SyncAll, "all", false, "sync all the buckets and objects")
 	rootCmd.Flags().BoolVarP(&Version, "version", "v", false, "zminio version")
 }
 
@@ -85,8 +95,8 @@ func Execute() {
 }
 
 func ValidateFlags() {
-	if Type == "" {
-		fmt.Println("you have to set -do flag")
+	if Type == "" && !SideLoader {
+		fmt.Println("you have to set --do flag")
 		os.Exit(0)
 	}
 
@@ -130,5 +140,19 @@ func ValidateFlags() {
 				SecureSSL_sync = false
 			}
 		}
+	}
+
+	if SideLoader && SideLoaderType == "" {
+		fmt.Println("you did not set the sideloader type.")
+		os.Exit(0)
+	}
+
+	if os.Getenv("SIDELOADER_MAXIMUM_SIZE_START") != "" {
+		intsize, err := strconv.ParseInt(os.Getenv("SIDELOADER_MAXIMUM_SIZE_START"), 15, 64)
+		if err != nil {
+			fmt.Println("the type of SIDELOADER_MAXIMUM_SIZE_START is invalid")
+			os.Exit(0)
+		}
+		MaxSizeSideload = intsize * 1024 * 1024
 	}
 }

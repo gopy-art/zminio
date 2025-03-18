@@ -16,6 +16,11 @@ import (
 	"github.com/minio/minio-go/v7/pkg/notification"
 )
 
+type ObjectInfo struct {
+	Key  string
+	Size int64
+}
+
 type MinioMethods struct{}
 
 /*
@@ -109,8 +114,8 @@ func (m MinioMethods) MinioConnection(url, username, password, bucket string, se
 		}
 	} else {
 		minioOption = &minio.Options{
-			Creds:     credentials.NewStaticV4(username, password, ""),
-			Secure:    secure,
+			Creds:  credentials.NewStaticV4(username, password, ""),
+			Secure: secure,
 		}
 	}
 
@@ -167,9 +172,9 @@ get all objects from the minio
 get the minio connection and bucket name and returns err and list of objects key
 it will return list of object in the bucket that you provided
 */
-func (m MinioMethods) ListAllObjectsFromMinio(connection *minio.Client, bucket string) ([]string, error) {
+func (m MinioMethods) ListAllObjectsFromMinio(connection *minio.Client, bucket string) ([]ObjectInfo, error) {
 	// save key array
-	var objects []string
+	var objects []ObjectInfo
 
 	// Create a context
 	ctx, cancel := context.WithCancel(context.Background())
@@ -184,7 +189,7 @@ func (m MinioMethods) ListAllObjectsFromMinio(connection *minio.Client, bucket s
 		if object.Err != nil {
 			return nil, object.Err
 		}
-		objects = append(objects, object.Key)
+		objects = append(objects, ObjectInfo{Key: object.Key, Size: object.Size})
 	}
 
 	return objects, nil

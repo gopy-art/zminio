@@ -31,12 +31,12 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
-      - ./grafana/datasources.yaml:/home/user/Documents/zminio/docker/datasources.yaml
+      - ./grafana/datasources.yaml:/home/nike/Documents/zminio/docker/datasources.yaml
 
   prometheus:
     image: prom/prometheus:v2.21.0
     ports:
       - 9090:9090
     volumes:
-      - /home/user/Videos/Documents/zminio/docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - /home/adam/Videos/Documents/zminio/docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     command: --web.enable-lifecycle --config.file=/etc/prometheus/prometheus.yml

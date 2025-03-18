@@ -4,6 +4,7 @@ import (
 	"Zminio/console"
 	logger "Zminio/log"
 	"Zminio/prometheus"
+	"Zminio/sideloader"
 	"context"
 	"fmt"
 	"io"
@@ -29,6 +30,15 @@ func ActionHelper() {
 	}
 	config := Minio{}
 	minioHelper := config.InitConnection()
+
+	if console.SideLoader && console.SideLoaderType == "server" {
+		connection, err := minioHelper.Functionality.MinioConnection(minioHelper.MinioAddress, minioHelper.MinioAccessKey, minioHelper.MinioSecretKey, minioHelper.Bucket, minioHelper.MinioSecure)
+		if err != nil {
+			logger.ErrorLogger.Printf("error in connect to the master minio, error = %v \n", err)
+		}
+
+		sideloader.SIDELOADER(connection)
+	}
 
 	switch console.Type {
 	case "upload":
@@ -133,7 +143,7 @@ func ActionHelper() {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					err := minioHelper.Download(console.OutPutFile, l)
+					err := minioHelper.Download(console.OutPutFile, l.Key)
 					if err != nil {
 						logger.ErrorLogger.Println(err)
 						os.Exit(0)
@@ -188,7 +198,7 @@ func ActionHelper() {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					err := minioHelper.Delete(l)
+					err := minioHelper.Delete(l.Key)
 					if err != nil {
 						logger.ErrorLogger.Println(err)
 						os.Exit(0)
@@ -217,7 +227,11 @@ func ActionHelper() {
 			logger.SuccessLogger.Printf("The object with name {%v} deleted successfully.", console.Object)
 		}
 	case "list":
-		list, err := minioHelper.ListObjects(console.Bucket)
+		connection, err := minioHelper.Functionality.MinioConnection(minioHelper.MinioAddress, minioHelper.MinioAccessKey, minioHelper.MinioSecretKey, minioHelper.Bucket, minioHelper.MinioSecure)
+		if err != nil {
+			logger.ErrorLogger.Fatalf("error in connecting to the minio, error = %v\n", err)
+		}
+		list, err := minioHelper.Functionality.ListAllObjectsFromMinio(connection, console.Bucket)
 		if err != nil {
 			logger.ErrorLogger.Println(err)
 			os.Exit(0)
@@ -260,159 +274,11 @@ func ActionHelper() {
 		}
 		logger.SuccessLogger.Printf("The object with name {%v} moved from this bucket {%v} to the this bucket {%v} successfully.", console.Object, console.Bucket, console.MBucket)
 	case "sync":
-		if console.Bucket_sync == "" || console.Access_key_sync == "" || console.Secret_key_sync == "" || console.Url_sync == "" {
-			logger.ErrorLogger.Println("nessesery information is not set!")
-			os.Exit(0)
-		}
-
-		if console.NumberOfWorker == 0 {
-			logger.ErrorLogger.Fatalln("number of worker is invalid!")
-		}
-
-		functions := MinioMethods{}
-		configSync := Minio{
-			Bucket:         console.Bucket_sync,
-			MinioAddress:   console.Url_sync,
-			MinioSecretKey: console.Secret_key_sync,
-			MinioAccessKey: console.Access_key_sync,
-			MinioSecure:    console.SecureSSL_sync,
-			Functionality:  functions,
-		}
-
-		sourceClient, err := minioHelper.Functionality.MinioConnection(console.Url, console.Access_key, console.Secret_key, console.Bucket, console.SecureSSL)
-		if err != nil {
-			logger.ErrorLogger.Fatal(err)
-		}
-
-		dstClient, err := configSync.Functionality.MinioConnection(console.Url_sync, console.Access_key_sync, console.Secret_key_sync, console.Bucket_sync, console.SecureSSL_sync)
-		if err != nil {
-			logger.ErrorLogger.Fatal(err)
-		}
-
-		// Ensure the destination bucket exists
-		err = dstClient.MakeBucket(context.Background(), console.Bucket_sync, minio.MakeBucketOptions{Region: "us-east-1"})
-		if err != nil {
-			// Check if bucket already exists
-			exists, errBucketExists := dstClient.BucketExists(context.Background(), console.Bucket_sync)
-			if errBucketExists != nil && !exists {
-				logger.ErrorLogger.Println(err)
-			}
-		}
-
-		start := time.Now()
-		// Channel for object keys
-		objectCh := make(chan minio.ObjectInfo)
-
-		// WaitGroup to manage concurrency
-		var wg sync.WaitGroup
-
-		// Start worker goroutines
-		for i := 0; i < console.NumberOfWorker; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for objectKey := range objectCh {
-					if console.Prometheus != "" {
-						prometheus.IncreasePrometheusCount("sync")
-					}
-					syncObject(sourceClient, dstClient, console.Bucket, console.Bucket_sync, objectKey.ContentType, objectKey.Key, objectKey.Size)
-					if console.Prometheus != "" {
-						go prometheus.DecreasePrometheusCount()
-					}
-				}
-			}()
-		}
-
-		if console.ListenSync {
-			go func() {
-				for {
-					if console.CacheUsage && os.Getenv("REDIS_BACKEND_URL") != "" {
-						err := cache.InitConnection()
-						if err != nil {
-							logger.ErrorLogger.Fatalf("error in connect to cache, error = %v", err)
-						}
-			
-						objects, err := configSync.Functionality.ListAllObjectsFromMinio(dstClient, console.Bucket_sync)
-						if err != nil {
-							logger.ErrorLogger.Fatalf("error in get list of objects, error = %v", err)
-						}
-			
-						for _, obj := range objects {
-							if ok, err := cache.SetKeyWithValue(obj, obj); ok != "ok" && err != nil {
-								logger.ErrorLogger.Printf("error in set value in cache, error = %v \n", err)
-							}
-						}
-					}
-
-					objectList := sourceClient.ListObjects(context.Background(), console.Bucket, minio.ListObjectsOptions{Recursive: true})
-					for object := range objectList {
-						if object.Err != nil {
-							logger.ErrorLogger.Println(object.Err)
-						}
-						objectCh <- object
-					}
-
-					logger.SuccessLogger.Printf("interval run successfully!")
-					time.Sleep(time.Duration(console.Interval) * time.Hour)
-				}
-			}()
-
-			listenChannel := minioHelper.Functionality.NotificationFromMinio(sourceClient, "", "", []string{"s3:ObjectCreated:Put", "s3:ObjectCreated:CompleteMultipartUpload"})
-
-			var wg2 sync.WaitGroup
-			for range console.NumberOfWorker {
-				wg2.Add(1)
-				go func() {
-					for notification := range listenChannel {
-						for _, event := range notification.Records {
-							if event.S3.Bucket.Name == console.Bucket {
-								logger.InfoLogger.Printf("recieve object with name { %s }", event.S3.Object.Key)
-								obj := minio.ObjectInfo{
-									Key:         event.S3.Object.Key,
-									Size:        event.S3.Object.Size,
-									ContentType: event.S3.Object.ContentType,
-								}
-								objectCh <- obj
-							}
-						}
-					}
-				}()
-			}
-			wg2.Wait()
+		if console.SyncAll {
+			SyncAllBucketToAllBucket(minioHelper)
 		} else {
-			if console.CacheUsage && os.Getenv("REDIS_BACKEND_URL") != "" {
-				err := cache.InitConnection()
-				if err != nil {
-					logger.ErrorLogger.Fatalf("error in connect to cache, error = %v", err)
-				}
-	
-				objects, err := configSync.Functionality.ListAllObjectsFromMinio(dstClient, console.Bucket_sync)
-				if err != nil {
-					logger.ErrorLogger.Fatalf("error in get list of objects, error = %v", err)
-				}
-	
-				for _, obj := range objects {
-					if ok, err := cache.SetKeyWithValue(obj, obj); ok != "ok" && err != nil {
-						logger.ErrorLogger.Printf("error in set value in cache, error = %v \n", err)
-					}
-				}
-			}
-
-			// List objects in the source bucket and send to channel
-			objectList := sourceClient.ListObjects(context.Background(), console.Bucket, minio.ListObjectsOptions{Recursive: true})
-			for object := range objectList {
-				if object.Err != nil {
-					logger.ErrorLogger.Println(object.Err)
-				}
-				objectCh <- object
-			}
-			close(objectCh) // Close the channel when done
-			// Wait for all workers to finish
-			wg.Wait()
+			SyncBucketToBucket(minioHelper)
 		}
-
-		elapsed := time.Since(start)
-		logger.SuccessLogger.Println("sync operation took = ", elapsed)
 	case "listenDownload":
 		if console.OutPutFile == "" {
 			logger.ErrorLogger.Fatalln("the output path does not set!")
@@ -468,7 +334,7 @@ func ActionHelper() {
 		}
 		wg.Wait()
 	default:
-		logger.ErrorLogger.Println("type in invalid!")
+		fmt.Println("--do flag did not set, so we are clean!")
 		return
 	}
 }
@@ -481,8 +347,15 @@ func syncObject(sourceClient, dstClient *minio.Client, sourceBucket, dstBucket, 
 			logger.ErrorLogger.Fatalf("error in connect to cache, error = %v", err)
 		}
 
-		if _, err = cache.GetSpecificKey(objectKey); err == nil {
-			logger.WarningLogger.Printf("this object { %v } already exists in the destination.", objectKey)
+		if _, err = cache.GetSpecificKey(fmt.Sprintf("%v/%v", dstBucket, objectKey)); err == nil {
+			logger.WarningLogger.Printf("this object { %v } already exists in { %v } bucket in the destination.", objectKey, dstBucket)
+			return
+		}
+	}
+
+	if console.MinioCache {
+		if _, err := dstClient.StatObject(context.Background(), dstBucket, objectKey, minio.StatObjectOptions{}); err == nil {
+			logger.WarningLogger.Printf("this object { %v } already exists in { %v } bucket in the destination.", objectKey, dstBucket)
 			return
 		}
 	}
@@ -514,7 +387,7 @@ func syncObject(sourceClient, dstClient *minio.Client, sourceBucket, dstBucket, 
 		}
 	}
 
-	logger.SuccessLogger.Printf("The object with name {%v} moved from this bucket {%v} to the this bucket {%v} successfully.", objectKey, console.Bucket, console.Bucket_sync)
+	logger.SuccessLogger.Printf("The object with name {%v} moved from this bucket {%v} to the this bucket {%v} successfully.", objectKey, sourceBucket, dstBucket)
 }
 
 func SaveFile(reader *minio.Object, objectKey string) {
