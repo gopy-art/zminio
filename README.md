@@ -24,7 +24,7 @@ this is a minio client package that allows you to these actions with your minio 
 6 ) `info` : get the information of one object from minio server. <br>
 7 ) `move` : move one object from one bucket to another bucket in minio server. <br>
 8 ) `sync` : sync two bucket from minio server with each other. <br>
-9 ) `listenDownload` : listen to the one bucket in minio server , and download every object that will be uploaded.
+9 ) `listenDownload` : listen to the one bucket in minio server , and download every object that will be uploaded.<br>
 10 ) `sideloader` : it will split large files into a specefic amount of size and transfer those base on the tcp connection.
 
 > [!NOTE] 
