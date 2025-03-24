@@ -78,7 +78,7 @@ func ControllerPrometheusInit(prometheusHost string) {
 		}, // labels
 	)
 	Uptime = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "zsync_uptime",
+		Name: "zminio_uptime",
 		Help: "worker uptime in seconds",
 	})
 
